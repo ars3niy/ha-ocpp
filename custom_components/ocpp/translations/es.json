@@ -7,6 +7,7 @@
                 "data": {
                     "host": "Dirección de host del sistema central",
                     "port": "Número de puerto del sistema central",
+                    "subprotocol": "Versión de OCPP",
                     "csid": "Nombre del sistema central",
                     "cpid": "Nombre del punto de carga",
                     "meter_interval": "Intervalo de mediciones (segundos)",

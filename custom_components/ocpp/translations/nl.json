@@ -7,6 +7,7 @@
                 "data": {
                     "host": "Host",
                     "port": "Poort",
+                    "subprotocol": "OCPP-versie",
                     "csid": "Central system identifier",
                     "cpid": "Charge point identifier",
                     "max_current": "Maximale laadstroom",

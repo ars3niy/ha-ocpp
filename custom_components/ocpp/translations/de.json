@@ -7,6 +7,7 @@
                 "data": {
                     "host": "Host-Adresse des Zentralsystems",
                     "port": "Portnummer des Zentralsystems",
+                    "subprotocol": "OCPP-Version",
                     "csid": "Identität des Zentralsystems",
                     "cpid": "Identität der Ladestation",
                     "max_current": "Maximaler Ladestrom",
