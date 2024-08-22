@@ -1,7 +1,10 @@
 """Representation of a OCPP 2.0.1 charging station."""
 
-from datetime import datetime
+import asyncio
+from datetime import datetime, UTC
 import logging
+
+from ocpp.exceptions import UnknownCallErrorCodeError, OCPPError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -13,6 +16,8 @@ from ocpp.v201 import call, call_result
 from .chargepoint import CentralSystemSettings, OcppVersion
 from .chargepoint import ChargePoint as cp
 
+from .enums import Profiles
+
 from .const import (
     DOMAIN,
 )
@@ -21,8 +26,20 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 logging.getLogger(DOMAIN).setLevel(logging.INFO)
 
 
+class InventoryReport:
+    """Cached full inventory report for a charger."""
+
+    evse_count: int = 0
+    smart_charging_available: bool = False
+    reservation_available: bool = False
+    local_auth_available: bool = False
+
+
 class ChargePoint(cp):
     """Server side representation of a charger."""
+
+    _inventory: InventoryReport = None
+    _wait_inventory: asyncio.Event | None = None
 
     def __init__(
         self,
@@ -58,6 +75,62 @@ class ChargePoint(cp):
             boot_info.get("firmware_version", None),
         )
 
+    async def _get_inventory(self):
+        if self._inventory:
+            return
+        req = call.GetBaseReport(1, "FullInventory")
+        try:
+            resp: call_result.GetBaseReport = await self.call(req)
+        except UnknownCallErrorCodeError:
+            self._inventory = InventoryReport()
+            return
+        except OCPPError:
+            return
+        self._inventory = InventoryReport()
+        if resp.status == "Accepted":
+            self._wait_inventory = asyncio.Event()
+            await asyncio.wait_for(self._wait_inventory.wait(), self._response_timeout)
+            self._wait_inventory = None
+
+    async def get_number_of_connectors(self) -> int:
+        """Return number of connectors on this charger."""
+        await self._get_inventory()
+        return self._inventory.evse_count if self._inventory else 0
+
+    async def get_supported_features(self) -> Profiles:
+        """Get comma-separated list of measurands supported by the charger."""
+        await self._get_inventory()
+        features = Profiles.CORE
+        if self._inventory and self._inventory.smart_charging_available:
+            features |= Profiles.SMART
+        if self._inventory and self._inventory.reservation_available:
+            features |= Profiles.RES
+        if self._inventory and self._inventory.local_auth_available:
+            features |= Profiles.AUTH
+
+        fw_req = call.UpdateFirmware(
+            1,
+            {
+                "location": "dummy://dummy",
+                "retrieveDateTime": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "signature": "☺",
+            },
+        )
+        try:
+            await self.call(fw_req)
+            features |= Profiles.FW
+        finally:
+            pass
+
+        trigger_req = call.TriggerMessage("StatusNotification")
+        try:
+            await self.call(trigger_req)
+            features |= Profiles.REM
+        finally:
+            pass
+
+        return features
+
     @on("BootNotification")
     def on_boot_notification(self, charging_station, reason, **kwargs):
         """Perform OCPP callback."""
@@ -88,6 +161,47 @@ class ChargePoint(cp):
     def ack(self, **kwargs):
         """Perform OCPP callback."""
         return call_result.StatusNotification()
+
+    @on("NotifyReport")
+    def on_report(self, request_id: int, generated_at: str, seq_no: int, **kwargs):
+        """Perform OCPP callback."""
+        if self._wait_inventory is None:
+            return
+        reports: list[dict] = kwargs.get("report_data", [])
+        for report_data in reports:
+            if ("component" not in report_data) or ("variable" not in report_data):
+                continue
+            component: dict = report_data["component"]
+            variable: dict = report_data["variable"]
+            component_name = component["name"]
+            variable_name = variable["name"]
+            value: str | None = None
+            for attribute in report_data["variable_attribute"]:
+                if (("type" not in attribute) or (attribute["type"] == "Actual")) and (
+                    "value" in attribute
+                ):
+                    value = attribute["value"]
+                    break
+            bool_value: bool = value and (value.casefold() == "true".casefold())
+
+            if (component_name == "SmartChargingCtrlr") and (
+                variable_name == "Available"
+            ):
+                self._inventory.smart_charging_available = bool_value
+            elif (component_name == "ReservationCtrlr") and (
+                variable_name == "Available"
+            ):
+                self._inventory.reservation_available = bool_value
+            elif (component_name == "LocalAuthListCtrlr") and (
+                variable_name == "Available"
+            ):
+                self._inventory.local_auth_available = bool_value
+            elif (component_name == "EVSE") and ("evse" in component):
+                self._inventory.evse_count = max(
+                    self._inventory.evse_count, component["evse"]["id"]
+                )
+        if not kwargs.get("tbc", False):
+            self._wait_inventory.set()
 
     @on("Authorize")
     def on_authorize(self, idToken, **kwargs):
