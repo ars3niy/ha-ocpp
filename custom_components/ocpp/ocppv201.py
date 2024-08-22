@@ -13,7 +13,12 @@ import websockets.server
 from ocpp.routing import on
 from ocpp.v201 import call, call_result
 from ocpp.v16.enums import ChargePointStatus as ChargePointStatusv16
-from ocpp.v201.enums import ConnectorStatusType, MeasurandType
+from ocpp.v201.enums import (
+    ConnectorStatusType,
+    MeasurandType,
+    OperationalStatusType,
+    ResetType,
+)
 
 from .chargepoint import CentralSystemSettings, OcppVersion
 from .chargepoint import ChargePoint as cp
@@ -172,6 +177,20 @@ class ChargePoint(cp):
             pass
 
         return features
+
+    async def set_availability(self, state: bool = True):
+        """Change availability."""
+        req: call.ChangeAvailability = call.ChangeAvailability(
+            OperationalStatusType.operative.value
+            if state
+            else OperationalStatusType.inoperative.value
+        )
+        await self.call(req)
+
+    async def reset(self, typ: str = ""):
+        """Hard reset charger unless soft reset requested."""
+        req: call.Reset = call.Reset(ResetType.immediate)
+        await self.call(req)
 
     @on("BootNotification")
     def on_boot_notification(self, charging_station, reason, **kwargs):
