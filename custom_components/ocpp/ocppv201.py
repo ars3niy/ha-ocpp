@@ -477,10 +477,10 @@ class ChargePoint(cp):
     def on_authorize(self, id_token: dict, **kwargs):
         """Perform OCPP callback."""
         status: str = AuthorizationStatusType.unknown.value
-        if (id_token["type"] == IdTokenType.iso14443) or (
-            id_token["type"] == IdTokenType.iso14443
-        ):
-            status = self.get_authorization_status(id_token["id_token"])
+        token_type: str = id_token["type"]
+        token: str = id_token["id_token"]
+        if (token_type == IdTokenType.iso14443) or (token_type == IdTokenType.iso14443):
+            status = self.get_authorization_status(token)
         return call_result.Authorize(id_token_info={"status": status})
 
     @staticmethod
@@ -642,6 +642,13 @@ class ChargePoint(cp):
             if evse_status_v16:
                 self._report_evse_status(evse_id, evse_status_v16)
 
+        response = call_result.TransactionEvent()
+        id_token = kwargs.get("id_token")
+        if id_token:
+            response.id_token_info = {"status": AuthorizationStatusType.accepted}
+            id_tag_string: str = id_token["type"] + ":" + id_token["id_token"]
+            self._metrics[cstat.id_tag.value].value = id_tag_string
+
         if event_type == TransactionEventType.started.value:
             self._tx_start_time = t
             tx_id: str = transaction_info["transaction_id"]
@@ -655,13 +662,11 @@ class ChargePoint(cp):
                 self._metrics[csess.session_time].unit = UnitOfTime.MINUTES
             if event_type == TransactionEventType.ended.value:
                 self._metrics[csess.transaction_id.value].value = ""
+                self._metrics[cstat.id_tag.value].value = ""
 
         if not offline:
             self.hass.async_create_task(self.update(self.central.cpid))
 
-        response = call_result.TransactionEvent()
-        if "id_token" in kwargs:
-            response.id_token_info = {"status": AuthorizationStatusType.accepted}
         return response
 
     @on("SignCertificate")
