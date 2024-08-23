@@ -16,10 +16,12 @@ from ocpp.v16.enums import ChargePointStatus as ChargePointStatusv16
 from ocpp.v201.enums import (
     ConnectorStatusType,
     GetVariableStatusType,
+    IdTokenType,
     MeasurandType,
     OperationalStatusType,
     ResetType,
     SetVariableStatusType,
+    AuthorizationStatusType,
 )
 
 from homeassistant.exceptions import ServiceValidationError, HomeAssistantError
@@ -458,9 +460,14 @@ class ChargePoint(cp):
             self._wait_inventory.set()
 
     @on("Authorize")
-    def on_authorize(self, idToken, **kwargs):
+    def on_authorize(self, id_token: dict, **kwargs):
         """Perform OCPP callback."""
-        return call_result.Authorize(id_token_info={"status": "Accepted"})
+        status: str = AuthorizationStatusType.unknown.value
+        if (id_token["type"] == IdTokenType.iso14443) or (
+            id_token["type"] == IdTokenType.iso14443
+        ):
+            status = self.get_authorization_status(id_token["id_token"])
+        return call_result.Authorize(id_token_info={"status": status})
 
     @on("TransactionEvent")
     def on_transaction_event(
