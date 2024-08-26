@@ -74,6 +74,12 @@
         },
         "set_variables_error": {
             "message": "Failed to set variable: {message}"
+        },
+        "profile_not_supported": {
+            "message": "Setting custom charging profiles not supported"
+        },
+        "dual_profile_not_supported": {
+            "message": "Setting both current and power limit not supported"
         }
     }
 }
