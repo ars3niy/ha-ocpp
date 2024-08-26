@@ -56,7 +56,15 @@ SWITCHES: Final = [
         on_action=HAChargerServices.service_availability.name,
         off_action=HAChargerServices.service_availability.name,
         metric_state=HAChargerStatuses.status_connector.value,
-        metric_condition=[ChargePointStatus.available.value],
+        metric_condition=[
+            ChargePointStatus.available.value,
+            ChargePointStatus.preparing.value,
+            ChargePointStatus.charging.value,
+            ChargePointStatus.suspended_evse.value,
+            ChargePointStatus.suspended_ev.value,
+            ChargePointStatus.finishing.value,
+            ChargePointStatus.reserved.value,
+        ],
         default_state=True,
     ),
 ]
